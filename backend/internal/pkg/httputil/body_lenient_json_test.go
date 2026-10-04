@@ -2,6 +2,7 @@ package httputil
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -163,6 +164,31 @@ func TestNormalizeLenientJSONRequestBody_allows_http_requests_with_client_contro
 				t.Fatalf("status mismatch: got %d want %d", resp.StatusCode, tt.want)
 			}
 		})
+	}
+}
+
+func TestReadLenientJSONRequestBodyWithPrealloc_UsesConfiguredCompressedBodyLimit(t *testing.T) {
+	large := bytes.Repeat([]byte("x"), (64<<20)+1024)
+	payload := append([]byte(`{"input":"`), large...)
+	payload = append(payload, []byte(`"}`)...)
+
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	if _, err := zw.Write(payload); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(compressed.Bytes()))
+	req.Header.Set("Content-Encoding", "gzip")
+	got, err := ReadLenientJSONRequestBodyWithPrealloc(req, int64(len(payload)+1))
+	if err != nil {
+		t.Fatalf("read compressed body: %v", err)
+	}
+	if !bytes.Equal(payload, got) {
+		t.Fatalf("decoded body mismatch: got %d bytes want %d", len(got), len(payload))
 	}
 }
 

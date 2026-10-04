@@ -175,7 +175,13 @@ func readRequestBodyChunks(reader io.Reader, initialCapacity int, contentLength 
 // ReadLenientJSONRequestBodyWithPrealloc reads a request body and normalizes
 // JSON string control bytes before strict validation.
 func ReadLenientJSONRequestBodyWithPrealloc(req *http.Request, maxNormalizedBytes int64) ([]byte, error) {
-	body, err := ReadRequestBodyWithPrealloc(req)
+	// Apply the configured gateway limit to decompressed request bodies too.
+	// The previous helper used the fixed 64 MiB decompression guard here,
+	// silently truncating larger gzip/zstd JSON bodies before JSON validation.
+	if maxNormalizedBytes <= 0 {
+		maxNormalizedBytes = maxDecompressedBodySize
+	}
+	body, err := ReadRequestBodyWithPreallocLimit(req, maxNormalizedBytes)
 	if err != nil {
 		return nil, err
 	}
